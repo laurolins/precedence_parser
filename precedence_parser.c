@@ -390,6 +390,7 @@ Parser parse(Stream *stream)
 //
 
 void parser_print_node(Parser *self, Node_ID node_id, int level)
+//{{{ 
 {
         Node *node = self->nodes.p + node_id;
         if (node->type == Node_Type_Leaf) {
@@ -406,6 +407,7 @@ void parser_print_node(Parser *self, Node_ID node_id, int level)
                 parser_print_node(self, node->right, level+1);
         }
 }
+//}}}
 
 void parser_print_tree(Parser *self)
 //{{{ 
@@ -414,27 +416,57 @@ void parser_print_tree(Parser *self)
 }
 //}}}
 
+String read_stdin_into_buffer()
+//{{{ 
+{
+        char *buffer = 0;
+        size_t size = 0;  // Total size of the buffer
+        size_t capacity = 1024;  // Initial buffer capacity
+        size_t bytes_read;
+
+        // Allocate initial buffer
+        buffer = (char *)malloc(capacity * sizeof(char));
+        assert(buffer != NULL && "Memory allocation failed");
+
+        while ((bytes_read = fread(buffer + size, 1, capacity - size, stdin)) > 0) {
+                size += bytes_read;
+                if (size == capacity) {
+                        // Double the buffer capacity if needed
+                        capacity *= 2;
+                        buffer = (char *)realloc(buffer, capacity);
+                        assert(buffer != NULL && "Memory reallocation failed");
+                }
+        }
+
+        return (String) { .p = buffer, .n = size };
+}
+//}}}
 
 int main() 
 //{{{ 
 {
-        // char *expression = "((((2 * 3) + (5 * 4)) - 6) > (7 * 8))";
-
-        char *expression = "2 * 3 + 5 * 4 - 6 > 7 * 8";
+        //
+        // Usage:
+        //
+        // echo "2 * 3 + 5 * 4 - 6 > 7 * 8" | ./precedence_parser
+        // cat example_01.txt | ./precedence_parser
+        // cat example_02.txt | ./precedence_parser
+        //
+        String text = read_stdin_into_buffer();
 
         Stream stream = {
-                .data   = expression,
+                .data   = text.p,
+                .length = text.n,
                 .offset = 0,
-                .length = strlen(expression),
         };
 
         Parser parser = parse(&stream);
 
-        parser_print_tree(&parser);
 
         if (parser.root == 0) {
                 printf("Error: expected a valid root\n");
         } else {
+                parser_print_tree(&parser);
                 printf("OK\n");
         }
 
