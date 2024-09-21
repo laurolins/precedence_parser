@@ -21,6 +21,8 @@ typedef enum {
         Token_Type_Invalid,
         Token_Type_Number,
         Token_Type_Binary_Operator,
+        Token_Type_Left_Parenthesis,
+        Token_Type_Right_Parenthesis,
         Token_Type_EOF,
         Token_Type_Done,     // EOF is generated once after that Done is generated
                              // from here on these are skip tokens
@@ -66,7 +68,8 @@ typedef struct {
 
 typedef struct {
 //{{{ 
-        Node_Type  type;
+        Node_Type  type:31;
+        bool       parenthesis:1;
 
         Token      token;
 
@@ -187,6 +190,20 @@ Token next_token(Stream *stream)
                 tk.binary_operator = op;
                 stream->offset += tk.length;
                 //}}}
+        } else if (*it == '(') {
+                //{{{
+                ++it;
+                tk.length = it - begin;
+                tk.type = Token_Type_Left_Parenthesis;
+                stream->offset += tk.length;
+                //}}}
+        } else if (*it == ')') {
+                //{{{
+                ++it;
+                tk.length = it - begin;
+                tk.type = Token_Type_Right_Parenthesis;
+                stream->offset += tk.length;
+                //}}}
         } else {
                 //{{{ 
                 tk.length = end - begin;
@@ -284,19 +301,35 @@ Node_ID parse_leaf(Parser *self)
 //{{{ 
 {
         Token tk = parser_get_current_non_skip_token(self);
-        if (tk.type != Token_Type_Number) {
-                return 0;
+        if (tk.type == Token_Type_Number) {
+                parser_consume_current_token(self);
+
+                Node *node = parser_new_node(self);
+                *node = (Node) {
+                        .type = Node_Type_Leaf,
+                        .token = tk,
+                };
+
+                Node_ID id = node - self->nodes.p;
+                return id;
+        } else if (tk.type == Token_Type_Left_Parenthesis) {
+                parser_consume_current_token(self);
+
+                Node_ID id = parse_expression(self, 0);
+
+                Token tk = parser_get_current_non_skip_token(self);
+                if (tk.type != Token_Type_Right_Parenthesis) {
+                        printf("Error: expected a ')' at offset %llu\n", tk.offset);
+                        return 0; // dummy node is a sign of error
+                }
+                parser_consume_current_token(self);
+
+                self->nodes.p[id].parenthesis = true;
+
+                return id;
+        } else {
+                return 0; // no possible leaf
         }
-        parser_consume_current_token(self);
-
-        Node *node = parser_new_node(self);
-        *node = (Node) {
-                .type = Node_Type_Leaf,
-                .token = tk,
-        };
-
-        Node_ID id = node - self->nodes.p;
-        return id;
 }
 //}}}
 
@@ -395,13 +428,15 @@ void parser_print_node(Parser *self, Node_ID node_id, int level)
         Node *node = self->nodes.p + node_id;
         if (node->type == Node_Type_Leaf) {
                 String tk_str = parser_token_string(self, node->token);
-                printf("%*sLeaf: %.*s\n", 
+                printf("%*sLeaf%s: %.*s\n", 
                                 4*level, "", 
+                                node->parenthesis ? "()" : "",
                                 (int) tk_str.n, tk_str.p);
         } else {
                 String tk_str = parser_token_string(self, node->token);
-                printf("%*sBinary Operator: %.*s\n", 
+                printf("%*sBinary Operator%s: %.*s\n", 
                                 4*level, "",
+                                node->parenthesis ? "()" : "",
                                 (int) tk_str.n, tk_str.p);
                 parser_print_node(self, node->left,  level+1);
                 parser_print_node(self, node->right, level+1);
